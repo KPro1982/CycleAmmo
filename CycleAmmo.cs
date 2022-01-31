@@ -22,32 +22,32 @@ namespace CycleAmmo
     {
         public const string PluginGUID = "com.jotunn.CycleAmmo";
         public const string PluginName = "CycleAmmo";
-        public const string PluginVersion = "0.0.1";
-        
+        public const string PluginVersion = "1.1.0";
+
         // Use this class to add your own localization to the game
         // https://valheim-modding.github.io/Jotunn/tutorials/localization.html
-        public static CustomLocalization Localization = LocalizationManager.Instance.GetLocalization();
-        
-        
+        public static CustomLocalization Localization =
+            LocalizationManager.Instance.GetLocalization();
+
+
         // Variable BepInEx Shortcut backed by a config
         private ConfigEntry<KeyboardShortcut> ShortcutConfig;
         private ButtonConfig ShortcutButton;
         private ConfigEntry<bool> ShowSelection;
-        
-        
+
 
         private void Awake()
         {
             // Jotunn comes with MonoMod Detours enabled for hooking Valheim's code
             // https://github.com/MonoMod/MonoMod
             On.FejdStartup.Awake += FejdStartup_Awake;
-            
+
             // Jotunn comes with its own Logger class to provide a consistent Log style for all mods using it
             Jotunn.Logger.LogInfo("CycleAmmo has landed");
-            
+
             // To learn more about Jotunn's features, go to
             // https://valheim-modding.github.io/Jotunn/tutorials/overview.html
-            
+
             CreateConfigValues();
             AddInputs();
         }
@@ -74,87 +74,116 @@ namespace CycleAmmo
             };
             InputManager.Instance.AddButton(PluginGUID, ShortcutButton);
         }
-        
+
         private void CreateConfigValues()
         {
             Config.SaveOnConfigSet = true;
 
             ShortcutConfig = Config.Bind("Cycle Ammo Config", "Keycodes with modifiers",
-                new KeyboardShortcut(KeyCode.C, KeyCode.LeftControl),
-                new ConfigDescription("Cycle Ammo Key"));
-            
+                new KeyboardShortcut(KeyCode.G), new ConfigDescription("Cycle Ammo Key"));
+
             ShowSelection = Config.Bind("Cycle Ammo Config", "showmessage", true,
                 new ConfigDescription("Show message indicating equipped ammo type"));
-
         }
 
-        
+
         private void Update()
         {
-            if (ShortcutButton != null)
+            if (ZInput.instance != null)
             {
-                if (ZInput.GetButtonDown(ShortcutButton.Name))
+                if (ShortcutButton != null)
                 {
-                    DoCycleAmmo();
+                    if (ZInput.GetButtonDown(ShortcutButton.Name))
+                    {
+                        DoCycleAmmo();
+                    }
+                }
+                else
+                {
+                    MessageHud.instance.ShowMessage(MessageHud.MessageType.Center,
+                        "Cycle Ammo: Null Error");
                 }
             }
-            else
-            {
-                MessageHud.instance.ShowMessage(MessageHud.MessageType.Center, "Cycle Ammo: Null Error");
-            }
         }
-        
+
         private void DoCycleAmmo()
         {
-            
             Humanoid character = Player.m_localPlayer;
             var currentWeapon = character.GetCurrentWeapon();
             var currentAmmo = character.GetAmmoItem();
             List<ItemDrop.ItemData> availableAmmo = new List<ItemDrop.ItemData>();
-           
-      
-            if (!string.IsNullOrEmpty(currentWeapon.m_shared.m_ammoType))
+
+            if (string.IsNullOrEmpty(currentWeapon.m_shared.m_ammoType))
             {
-                if (currentAmmo == null)
+                if (ShowSelection.Value)
                 {
-                    currentAmmo = character.GetInventory().GetAmmoItem(currentWeapon.m_shared.m_ammoType);
+                    MessageHud.instance.ShowMessage(MessageHud.MessageType.Center,
+                        $"No bow is selected");
+                }
+            }
+            else
+            {
+                foreach (ItemDrop.ItemData inventoryItem in character.GetInventory().GetAllItems())
+                {
+                    if (inventoryItem.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Ammo)
+                    {
+                        availableAmmo.Add(inventoryItem);
+                    }
+                }
+
+                if (availableAmmo.Count == 0)
+                {
+                    if (ShowSelection.Value)
+                    {
+                        MessageHud.instance.ShowMessage(MessageHud.MessageType.Center,
+                            $"You are out of ammo");
+                    }
+                }
+                else if (availableAmmo.Count == 1)
+                {
+                    if (ShowSelection.Value)
+                    {
+                        MessageHud.instance.ShowMessage(MessageHud.MessageType.Center,
+                            $"You only have one type of ammo");
+                    }
+
+                    currentAmmo = SetDefaultAmmo(availableAmmo);
                 }
                 else
                 {
-                    ItemDrop.ItemData nextAmmo = character.GetInventory().GetAmmoItem(currentWeapon.m_shared.m_ammoType);
-                    
-                    foreach (ItemDrop.ItemData inventoryItem in character.GetInventory().GetAllItems())
+                    if (currentAmmo == null)
                     {
-                        if (inventoryItem.m_shared.m_itemType == ItemDrop.ItemData.ItemType.Ammo )
-                        {
-                            availableAmmo.Add(inventoryItem);
-                        }
+                        currentAmmo = SetDefaultAmmo(availableAmmo);
                     }
 
-                    if (availableAmmo.Count > 1)
+                    ItemDrop.ItemData nextAmmo = character.GetInventory()
+                        .GetAmmoItem(currentWeapon.m_shared.m_ammoType);
+
+
+                    int curIndex = availableAmmo.IndexOf(currentAmmo);
+                    if (curIndex + 1 < availableAmmo.Count)
                     {
-                        int curIndex = availableAmmo.IndexOf(currentAmmo);
-                        if (curIndex + 1 < availableAmmo.Count)
-                        {
-                            character.EquipItem(availableAmmo[curIndex + 1]);
-                        }
-                        else
-                        {
-                            character.EquipItem(availableAmmo[0]);
-                        }
+                        character.EquipItem(availableAmmo[curIndex + 1]);
                     }
+                    else
+                    {
+                        character.EquipItem(availableAmmo[0]);
+                    }
+
 
                     if (ShowSelection.Value)
                     {
-                        MessageHud.instance.ShowMessage(MessageHud.MessageType.Center, $"{character.GetAmmoItem().m_shared.m_name} selected");
+                        MessageHud.instance.ShowMessage(MessageHud.MessageType.Center,
+                            $"{character.GetAmmoItem().m_shared.m_name} selected");
                     }
-                    
                 }
-                
-
             }
-           
+        }
+
+
+        private static ItemDrop.ItemData SetDefaultAmmo(List<ItemDrop.ItemData> availableAmmo)
+        {
+            return availableAmmo[0];
         }
     }
 }
-
